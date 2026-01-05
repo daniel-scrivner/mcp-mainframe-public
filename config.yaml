@@ -1,0 +1,473 @@
+# MCP Mainframe Configuration
+# Single source of truth for all MCP server configurations
+# Run `make generate` to update Claude config after changes
+
+# Global settings
+settings:
+  # Where to output generated Claude config
+  claude_config_path: ~/.claude.json
+
+  # Logging
+  log_dir: ./logs
+  log_retention_days: 30
+
+  # Health check settings
+  health_check:
+    timeout_seconds: 30
+    retry_count: 3
+
+# Server definitions
+# Each server specifies:
+#   - tier: 1-4 (1=critical, 4=niche)
+#   - transport: stdio, http, sse
+#   - source: remote, npm, npx, docker, local, pip, pipx
+#   - version: pinned version (for npm/local)
+#   - enabled: true/false
+#   - secrets_file: path to encrypted secrets (optional)
+
+servers:
+  # ============================================================================
+  # TIER 1: Critical - Remote MCP (most reliable)
+  # ============================================================================
+
+  github:
+    tier: 1
+    enabled: true
+    transport: stdio
+    source: docker
+    image: ghcr.io/github/github-mcp-server:latest
+    description: "GitHub repos, issues, PRs, Actions"
+    secrets_file: secrets/github.enc.yaml
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}"
+    health_check:
+      command: "docker run --rm -e GITHUB_PERSONAL_ACCESS_TOKEN ghcr.io/github/github-mcp-server --version"
+
+  linear:
+    tier: 1
+    enabled: true
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["https://mcp.linear.app/mcp"]
+    description: "Linear issues, projects, teams"
+    # OAuth handled by remote server
+
+  slack:
+    tier: 1
+    enabled: true
+    transport: stdio
+    source: npm
+    package: slack-mcp-server
+    version: "^1.0.0"  # Pin to major version
+    description: "Slack messages, channels, search"
+    secrets_file: secrets/slack.enc.yaml
+    # Using browser session tokens (stealth mode) - no OAuth app needed
+    env:
+      SLACK_MCP_XOXC_TOKEN: "${SLACK_XOXC_TOKEN}"
+      SLACK_MCP_XOXD_TOKEN: "${SLACK_XOXD_TOKEN}"
+
+  # ============================================================================
+  # TIER 1: Productivity - Core workspace tools
+  # ============================================================================
+
+  google-workspace:
+    tier: 1
+    enabled: false  # Requires Google Cloud OAuth setup
+    transport: stdio
+    source: docker
+    # TODO: Pin to verified digest for production use
+    image: ghcr.io/aaronsb/google-workspace-mcp@sha256:REPLACE_WITH_VERIFIED_DIGEST
+    description: "Gmail, Calendar, Drive, Contacts"
+    secrets_file: secrets/google-workspace.enc.yaml
+    env:
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+    notes: |
+      Setup:
+      1. Create Google Cloud Project at console.cloud.google.com
+      2. Enable Gmail, Calendar, Drive APIs
+      3. Configure OAuth consent screen (External, add self as test user)
+      4. Create OAuth 2.0 credentials (Web application type)
+      5. Set redirect URI to http://localhost:8080
+      6. Add credentials to secrets/google-workspace.enc.yaml
+      First run will open browser for OAuth consent.
+
+  notion:
+    tier: 1
+    enabled: true
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["https://mcp.notion.com/mcp"]
+    description: "Notion pages, databases, blocks"
+    # OAuth handled by remote server
+
+  # ============================================================================
+  # TIER 2: Important - Official npm packages
+  # ============================================================================
+
+  asana:
+    tier: 2
+    enabled: true
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["https://mcp.asana.com/sse"]
+    description: "Asana tasks, projects, workspaces (Official)"
+    # OAuth handled by remote server
+    notes: |
+      Official Asana MCP server. Uses SSE transport via mcp-remote.
+      First use will prompt for OAuth in browser.
+      Enterprise+ users: App Management can control MCP access.
+
+  airtable:
+    tier: 2
+    enabled: false  # Requires Airtable PAT
+    transport: stdio
+    source: npx
+    package: airtable-mcp-server@1.0.3  # Pinned for supply chain security
+    description: "Airtable bases, tables, records, schema"
+    secrets_file: secrets/airtable.enc.yaml
+    env:
+      AIRTABLE_API_KEY: "${AIRTABLE_API_KEY}"
+    notes: |
+      Setup:
+      1. Create Personal Access Token at airtable.com/create/tokens
+      2. Required scopes: schema.bases:read, data.records:read
+      3. Optional: schema.bases:write, data.records:write, data.recordComments:read/write
+      4. Add token to secrets/airtable.enc.yaml as AIRTABLE_API_KEY
+
+  quickbooks:
+    tier: 2
+    enabled: false  # Requires Intuit Developer OAuth setup
+    transport: stdio
+    source: local
+    path: ./servers/quickbooks
+    repo: https://github.com/intuit/quickbooks-online-mcp-server
+    # TODO: Pin to reviewed commit hash for reproducible builds
+    commit: REPLACE_WITH_REVIEWED_COMMIT_HASH
+    command: ["node", "dist/index.js"]
+    description: "QuickBooks invoices, customers, expenses, reports"
+    secrets_file: secrets/quickbooks.enc.yaml
+    env:
+      QUICKBOOKS_CLIENT_ID: "${QUICKBOOKS_CLIENT_ID}"
+      QUICKBOOKS_CLIENT_SECRET: "${QUICKBOOKS_CLIENT_SECRET}"
+      QUICKBOOKS_ENVIRONMENT: "${QUICKBOOKS_ENVIRONMENT:-sandbox}"
+    notes: |
+      Setup:
+      1. Register at developer.intuit.com
+      2. Create app, get Client ID and Secret
+      3. Set redirect URI to http://localhost:8000/callback
+      4. Start with sandbox environment for testing
+      5. Switch QUICKBOOKS_ENVIRONMENT to "production" when ready
+      First run opens browser for OAuth authentication.
+
+  stripe:
+    tier: 2
+    enabled: true
+    transport: stdio
+    source: npx
+    package: "@stripe/mcp"
+    args: ["--tools=all"]
+    description: "Stripe payments, customers, subscriptions"
+    secrets_file: secrets/stripe.enc.yaml
+    env:
+      STRIPE_API_KEY: "${STRIPE_API_KEY}"
+
+  aws-lambda:
+    tier: 2
+    enabled: true
+    transport: stdio
+    source: npx
+    package: "@aws-mcp/lambda-tool"
+    description: "AWS Lambda function invocation"
+    secrets_file: secrets/aws.enc.yaml
+    env:
+      AWS_REGION: "${AWS_REGION:-us-west-2}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+
+  dagster:
+    tier: 2
+    enabled: false  # Requires Python 3.12+ and Dagster Cloud setup
+    transport: stdio
+    source: pipx
+    package: mcp-server-dagster
+    command: ["mcp-dagster"]
+    description: "Dagster jobs, assets, runs"
+    notes: "Installed via pipx with Python 3.12. Command is mcp-dagster (not mcp-server-dagster)."
+    secrets_file: secrets/dagster.enc.yaml
+    env:
+      DAGSTER_GRAPHQL_URL: "${DAGSTER_GRAPHQL_URL:-http://localhost:3000/graphql}"
+      DAGSTER_USER_TOKEN: "${DAGSTER_USER_TOKEN}"
+
+  cloudflare:
+    tier: 2
+    enabled: true
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["https://mcp.cloudflare.com/sse"]
+    description: "Cloudflare Workers, KV, R2, DNS"
+    # OAuth handled by remote server
+
+  # ============================================================================
+  # TIER 2: Design Tools - Remote MCP with OAuth
+  # ============================================================================
+
+  # Figma Desktop MCP (Personal Account)
+  # NOTE: Using desktop app server (localhost) rather than remote OAuth
+  figma:
+    tier: 2
+    enabled: true
+    transport: http
+    source: remote
+    url: "http://127.0.0.1:3845/mcp"
+    description: "Figma (Personal) - designs, components, variables, code generation"
+    notes: |
+      Uses Figma Desktop app's built-in MCP server.
+      Setup: Open Figma Desktop → Shift+D (Dev Mode) → Enable desktop MCP server
+      The desktop server must be running for this to work.
+      Requires paid Figma plan (Professional, Organization, or Enterprise).
+      Free/Starter plans limited to 6 tool calls per month.
+
+  # Figma Work Account (Business/Team projects)
+  # Uses separate OAuth session for work Figma organization
+  figma-work:
+    tier: 2
+    enabled: false  # Enable if you have a separate work Figma account
+    transport: http
+    source: remote
+    url: "https://mcp.figma.com/mcp"
+    description: "Figma (Work/Business) - separate OAuth session for work organization"
+    notes: |
+      Uses Figma's remote MCP server with OAuth.
+      First use will prompt for OAuth in browser - log in with WORK credentials.
+      This keeps personal and work Figma accounts separate.
+      Claude will have access to both personal (via desktop) and work (via OAuth) Figma.
+
+  # Framer - Multiple sites, each with its own MCP server
+  # Each site gets a unique MCP URL from the Framer MCP plugin
+  framer-site1:
+    tier: 2
+    enabled: false  # Enable after getting MCP URL from Framer
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["${FRAMER_SITE1_URL}"]
+    description: "Framer (Site 1) - designs, components, React export"
+    secrets_file: secrets/framer.enc.yaml
+    env:
+      FRAMER_SITE1_URL: "${FRAMER_SITE1_URL}"
+    notes: |
+      Each Framer site needs its own MCP URL from the Framer MCP plugin.
+      1. Install MCP plugin from Framer Marketplace (once per site)
+      2. Open plugin in each Framer project to get unique MCP URL
+      3. Add URLs to secrets/framer.enc.yaml
+      Never share your MCP URLs - they contain session secrets.
+
+  # ============================================================================
+  # TIER 3: Useful - Remote MCP (easiest setup)
+  # ============================================================================
+
+  craft:
+    tier: 3
+    enabled: false  # Enable after getting MCP URL from Craft
+    transport: http
+    source: remote
+    url: "${CRAFT_MCP_URL}"
+    description: "Craft docs - notes, documents, spaces"
+    secrets_file: secrets/craft.enc.yaml
+    notes: |
+      Requires MCP URL from Craft:
+      1. Open Craft → Imagine tab → Enable MCP
+      2. Create an MCP connection with document access
+      3. Copy the generated MCP URL
+      4. Add to secrets/craft.enc.yaml as CRAFT_MCP_URL
+
+  composer:
+    tier: 3
+    enabled: false  # Enable if you use Composer for trading
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["https://ai.composer.trade/mcp"]
+    description: "Composer trading strategies, backtesting"
+    # OAuth handled by remote server
+
+  dropbox:
+    tier: 3
+    enabled: true
+    transport: stdio
+    source: npx
+    package: mcp-remote
+    args: ["https://mcp.dropbox.com/mcp"]
+    description: "Dropbox files, folders, sharing"
+    # OAuth handled by remote server
+
+  vercel:
+    tier: 3
+    enabled: true
+    transport: stdio
+    source: npx
+    package: "@vercel/mcp"
+    description: "Vercel deployments, projects, domains"
+    secrets_file: secrets/vercel.enc.yaml
+    env:
+      VERCEL_API_TOKEN: "${VERCEL_API_TOKEN}"
+
+  readwise:
+    tier: 3
+    enabled: false  # Enable after getting access token
+    transport: stdio
+    source: npx
+    package: "@readwise/readwise-mcp"
+    description: "Readwise highlights, books, documents, Reader articles"
+    secrets_file: secrets/readwise.enc.yaml
+    env:
+      ACCESS_TOKEN: "${READWISE_ACCESS_TOKEN}"
+    notes: |
+      Official Readwise MCP server. Provides 30+ tools for:
+      - Retrieving highlights with filtering and pagination
+      - Searching your Readwise library with natural language
+      - Accessing books, articles, and documents
+      Setup:
+      1. Get Access Token at readwise.io/access_token
+      2. Run: make secrets-create SERVICE=readwise
+      3. Add token to secrets/readwise.enc.yaml as READWISE_ACCESS_TOKEN
+      4. Enable this server and run: make generate
+
+  ghost:
+    tier: 3
+    enabled: false  # Enable after Ghost setup
+    transport: stdio
+    source: npx
+    package: "@fanyangmeng/ghost-mcp"
+    description: "Ghost CMS posts, pages, tags, authors, members"
+    secrets_file: secrets/ghost.enc.yaml
+    env:
+      GHOST_API_URL: "${GHOST_API_URL}"
+      GHOST_ADMIN_API_KEY: "${GHOST_ADMIN_API_KEY}"
+    notes: |
+      Ghost CMS MCP server for blog/publication management.
+      Uses @fanyangmeng/ghost-mcp package.
+      Setup:
+      1. Go to Ghost Admin → Settings → Integrations → Custom
+      2. Create new custom integration, copy Admin API key
+      3. Run: make secrets-create SERVICE=ghost
+      4. Add GHOST_API_URL (your Ghost site URL) and GHOST_ADMIN_API_KEY
+      5. Set enabled: true and run: make generate
+
+  # ============================================================================
+  # TIER 4: Niche - Community/local installs (more fragile)
+  # ============================================================================
+
+  namecheap:
+    tier: 4
+    enabled: false  # Enable after Namecheap API setup
+    transport: stdio
+    source: local
+    path: ./servers/namecheap
+    repo: https://github.com/johnsorrentino/mcp-namecheap
+    commit: main  # Pin to specific commit for stability
+    command: ["node", "./dist/index.js"]
+    description: "Namecheap domains, DNS"
+    secrets_file: secrets/namecheap.enc.yaml
+    env:
+      NAMECHEAP_API_USERNAME: "${NAMECHEAP_API_USERNAME}"
+      NAMECHEAP_API_KEY: "${NAMECHEAP_API_KEY}"
+      NAMECHEAP_ACCOUNT_USERNAME: "${NAMECHEAP_ACCOUNT_USERNAME}"
+      NAMECHEAP_IP_ADDRESS: "${NAMECHEAP_IP_ADDRESS}"
+      NAMECHEAP_ENABLE_GETLIST: "true"
+      NAMECHEAP_ENABLE_CHECK: "true"
+      NAMECHEAP_ENABLE_SETCUSTOM: "true"
+
+  front:
+    tier: 4
+    enabled: false  # Enable after Front API setup
+    transport: stdio
+    source: local
+    path: ./servers/front
+    repo: https://github.com/zqushair/frontapp-mcp
+    commit: main
+    command: ["node", "./dist/index.js"]
+    description: "Front email, conversations, contacts"
+    secrets_file: secrets/front.enc.yaml
+    env:
+      FRONT_API_TOKEN: "${FRONT_API_TOKEN}"
+
+  # Interactive Brokers via SQS (requires EC2/TWS infrastructure)
+  ibkr:
+    tier: 2
+    enabled: false  # Enable after AWS SQS setup
+    transport: stdio
+    source: local
+    path: ./servers/ibkr-mcp
+    command: ["python", "-m", "ibkr_mcp.server"]
+    description: "Interactive Brokers via EC2/TWS - positions, OHLCV, contracts"
+    secrets_file: secrets/aws.enc.yaml
+    env:
+      AWS_REGION: "${AWS_REGION:-us-west-2}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      # SQS Queue URLs - configure these for your AWS account
+      IBKR_REQUEST_QUEUE_URL: "${IBKR_REQUEST_QUEUE_URL}"
+      IBKR_RESPONSE_QUEUE_URL: "${IBKR_RESPONSE_QUEUE_URL}"
+    notes: |
+      Uses EC2/TWS infrastructure via SQS queues.
+      Requires:
+      1. AWS credentials with SQS access
+      2. SQS queues for request/response communication
+      3. TWS service running on EC2 with IB Gateway
+      See servers/ibkr-mcp/README.md for full setup instructions.
+
+  # 1Password - uses official SDK
+  1password:
+    tier: 3
+    enabled: false  # Enable after 1Password service account setup
+    transport: stdio
+    source: local
+    path: ./servers/onepassword-mcp
+    command: ["python", "-m", "onepassword_mcp.server"]
+    description: "1Password credentials (official SDK, vault-scoped)"
+    secrets_file: secrets/1password.enc.yaml
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: "${OP_SERVICE_ACCOUNT_TOKEN}"
+      OP_ALLOWED_VAULTS: "${OP_ALLOWED_VAULTS:-AI}"
+      OP_ENABLE_WRITES: "${OP_ENABLE_WRITES:-false}"
+    notes: |
+      Custom MCP server using official 1Password Python SDK.
+
+      SECURITY: Only vaults listed in OP_ALLOWED_VAULTS are accessible.
+      Default: Only the "AI" vault is exposed.
+
+      Setup:
+      1. Create Service Account at my.1password.com → Developer Tools
+      2. Grant access ONLY to vaults you want Claude to access
+      3. Create a vault named "AI" for items to expose (recommended)
+      4. Add token to secrets/1password.enc.yaml as OP_SERVICE_ACCOUNT_TOKEN
+      5. Optionally set OP_ALLOWED_VAULTS to expand access
+
+  # 1Password (Work) - separate account for work credentials
+  1password-work:
+    tier: 3
+    enabled: false  # Enable after work service account setup
+    transport: stdio
+    source: local
+    path: ./servers/onepassword-mcp
+    command: ["python", "-m", "onepassword_mcp.server"]
+    description: "1Password work credentials (separate service account)"
+    secrets_file: secrets/1password-work.enc.yaml
+    env:
+      OP_SERVICE_ACCOUNT_TOKEN: "${OP_SERVICE_ACCOUNT_TOKEN_WORK}"
+      OP_ALLOWED_VAULTS: "${OP_ALLOWED_VAULTS_WORK:-Engineering}"
+      OP_ENABLE_WRITES: "${OP_ENABLE_WRITES_WORK:-false}"
+    notes: |
+      Work 1Password account - uses separate service account token.
+      Keeps personal and work credentials completely separate.
+
+      Setup:
+      1. Create Service Account in your work 1Password organization
+      2. Grant access to work-specific vaults only
+      3. Add token to secrets/1password-work.enc.yaml
