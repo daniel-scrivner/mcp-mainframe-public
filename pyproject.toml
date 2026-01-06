@@ -19,7 +19,7 @@ ignore = [
 known-first-party = ["onepassword_mcp", "ibkr_mcp"]
 
 [tool.pytest.ini_options]
-testpaths = ["servers/onepassword-mcp/tests", "servers/ibkr-mcp/tests"]
+testpaths = ["servers"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
