@@ -1,0 +1,30 @@
+---
+description: Check Python files for linting errors after edits
+globs: ["**/*.py"]
+alwaysApply: true
+---
+
+# Python Linting with Ruff
+
+After editing Python files, use the `read_lints` tool to check for linting errors. Fix any issues before moving on.
+
+## Key Error Codes to Watch
+
+- **F821**: Undefined name — usually means a missing import
+- **F401**: Unused import — remove or use the imported name
+- **F405**: Undefined name from star imports — avoid `from x import *`
+- **I001**: Import sorting issues — imports should be sorted
+
+## Workflow
+
+1. Edit Python file
+2. Call `read_lints` on the edited file
+3. If F821 errors exist, add the missing imports
+4. If F401 errors exist, remove unused imports or use them
+5. Verify with another `read_lints` call
+
+## Import Conventions for This Project
+
+- First-party imports: `onepassword_mcp.*`, `ibkr_mcp.*`
+- Standard library imports come first, then third-party, then first-party
+- Use absolute imports, not relative imports
