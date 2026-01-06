@@ -19,7 +19,9 @@ ignore = [
 known-first-party = ["onepassword_mcp", "ibkr_mcp"]
 
 [tool.pytest.ini_options]
-testpaths = ["servers/*/tests"]
+testpaths = ["servers/onepassword-mcp/tests", "servers/ibkr-mcp/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
